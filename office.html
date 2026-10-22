@@ -104,6 +104,8 @@ button,select{font:inherit;color:inherit}
 .members li:hover{background:var(--surface-2)}
 .members li.sel{background:color-mix(in srgb,var(--lit) 18%,transparent)}
 .members .nm{font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.apptag{display:inline-block;margin-right:5px;padding:0 5px;border-radius:4px;font:600 10.5px/16px var(--f-body);vertical-align:1px;color:#fff;background:#6b7280}
+.apptag.app-claude{background:#c2603e}.apptag.app-codex{background:#3a3f47}.apptag.app-gemini{background:#3f6fd8}
 .members .sub{display:block;font-weight:400;color:var(--muted);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .members li.child{padding-left:20px}
 .members li.child .nm{font-weight:500}
@@ -228,6 +230,7 @@ pre{margin:0;overflow-x:auto;background:var(--surface-2);border:1px solid var(--
         <dt>sessions[].state</dt><dd>working 작업 중, blocked 막힘, reporting 결과 보고, idle 대기. 대기가 되면 그 층 휴게실 소파로 가서 쉽니다.</dd>
         <dt>sessions[].startedAt</dt><dd>지금 작업을 시작한 시각. 40분이 넘으면 땀을 흘립니다.</dd>
         <dt>sessions[].stateSince</dt><dd>지금 상태가 된 시각. 대기가 15분을 넘으면 졸기 시작합니다.</dd>
+        <dt>sessions[].app</dt><dd>선택 사항. 세션을 돌리는 도구(claude, codex, gemini …). 도구가 두 가지 이상 섞여 있으면 현황판 이름 앞에 도구 이름표가 붙고, 사람에 마우스를 올리면 보입니다. 하위 작업자는 따로 적지 않아도 상위 세션을 따릅니다.</dd>
         <dt>sessions[].parent</dt><dd>하위 작업자면 상위 세션 id. 새로 생기면 엘리베이터를 타고 올라와 출근하고, 상위 세션과 함께 그 팀 앞 회의 자리에 모입니다. 마지막 하위 작업자가 나가면 회의 자리는 바로 치워집니다.</dd>
         <dt>questions[]</dt><dd>나에게 묻는 질문. 질문한 세션은 엘리베이터를 타고 맨 위층 대표실 앞에 줄을 서고, 답을 받으면 다시 내려갑니다. 3분이 지나면 땀, 8분이 지나면 쪼그려 앉습니다.</dd>
         <dt>dayEnded</dt><dd>true가 되면 아래층부터 구역마다 차례로 불이 꺼지고, 대표실 층이 마지막으로 꺼집니다. 그날 생긴 층·섬과 늘어난 자리도 이때 지우고, 다음 날에는 세션이 생기는 대로 다시 짓습니다.</dd>
@@ -1312,7 +1315,8 @@ function apply(d){
     .map(q => ({ ...q, sessionId:String(q.sessionId) })).sort((a,b) => (tms(a.askedAt) ?? 0) - (tms(b.askedAt) ?? 0));
   const pq = new Map(), qcount = new Map();
   for (const q of questions) { if (!pq.has(q.sessionId)) pq.set(q.sessionId, q); qcount.set(q.sessionId, (qcount.get(q.sessionId) || 0) + 1); }
-  DATA = { sessions, smap, questions, pq, qcount, groups, projects, dayEnded: !!d.dayEnded, subsOf:new Map() };
+  for (const s of sessions) if (!s.app && s.parent && smap.get(s.parent)) s.app = smap.get(s.parent).app;
+  DATA = { sessions, smap, questions, pq, qcount, groups, projects, dayEnded: !!d.dayEnded, subsOf:new Map(), apps: new Set(sessions.map(s => s.app).filter(Boolean)) };
 
   // 그날 상태: 마감되면 지우고, 다음 날(또는 다른 날짜·다른 자료) 자료가 오면 기본값부터
   const day = dayId(dataNow);
@@ -2101,6 +2105,10 @@ function renderStats(){
   $('#stats').innerHTML = items.map(([l,v,c]) => `<li${c ? ` style="--c:var(${c})"` : ''}><b>${v}</b>${l}</li>`).join('');
   cv.setAttribute('aria-label', `사무실 전체 화면. ${items.map(([l,v]) => `${l} ${v}`).join(', ')}. 자세한 내용은 아래 명단에 있습니다.`);
 }
+const APP_LABEL = { claude:'Claude', codex:'Codex', gemini:'Gemini' };
+const appName = a => APP_LABEL[a] || String(a);
+// 도구 이름표: 도구가 두 가지 이상 섞여 있을 때만 붙인다(한 가지뿐이면 군더더기)
+const appTag = s => s && s.app && DATA && DATA.apps.size > 1 ? `<span class="apptag app-${esc(String(s.app).replace(/[^\w-]/g, ''))}">${esc(appName(s.app))}</span>` : '';
 function memberLi(s, where){
   const q = DATA.pq.get(s.id), info = stateInfo(s, q);
   const parent = s.parent ? DATA.smap.get(s.parent) : null;
@@ -2114,7 +2122,7 @@ function memberLi(s, where){
   const z = zoneByGid.get(s.gid);
   if (z && z.waiting.includes(s.id)) bits.push('자리 대기 중');
   const a = actors.get(s.id); if (a && a.ride) bits.push('엘리베이터 안');
-  return `<li data-id="${esc(s.id)}" tabindex="0" class="${sel === s.id ? 'sel' : ''}${s.parent && !where ? ' child' : ''}"><span class="nm">${s.parent && !where ? '↳ ' : ''}${esc(s.name)}${bits.length ? `<span class="sub">${bits.join(' · ')}</span>` : ''}</span><span class="chip c-${info.cls}">${info.label}</span><span class="time">${info.time}</span></li>`;
+  return `<li data-id="${esc(s.id)}" tabindex="0" class="${sel === s.id ? 'sel' : ''}${s.parent && !where ? ' child' : ''}"><span class="nm">${s.parent && !where ? '↳ ' : ''}${appTag(s)}${esc(s.name)}${bits.length ? `<span class="sub">${bits.join(' · ')}</span>` : ''}</span><span class="chip c-${info.cls}">${info.label}</span><span class="time">${info.time}</span></li>`;
 }
 function renderBoard(){
   const el = $('#board');
@@ -2127,7 +2135,7 @@ function renderBoard(){
       const qrows = [...DATA.pq.values()].map((q,i) => {
         const s = DATA.smap.get(q.sessionId), m = minsSince(q.askedAt), more = (DATA.qcount.get(q.sessionId) || 1) - 1;
         const cls = m >= 8 ? 'c-bad' : m >= 3 ? 'c-warn' : 'c-q', sf = s && FLOORS.get(s.proj);
-        return `<li data-id="${esc(q.sessionId)}" tabindex="0" class="${sel === q.sessionId ? 'sel' : ''}"><span class="ord">${i+1}</span><span class="nm">${esc(s ? s.name : (q.from || '알 수 없는 세션'))}${sf ? `<span class="sub">${esc(floorName(sf))}에서 올라옴</span>` : ''}<span class="qt">${esc(q.text)}${more ? ` (질문 ${more}건 더)` : ''}</span></span><span class="chip ${cls}">${fmtMin(m)}</span></li>`;
+        return `<li data-id="${esc(q.sessionId)}" tabindex="0" class="${sel === q.sessionId ? 'sel' : ''}"><span class="ord">${i+1}</span><span class="nm">${appTag(s)}${esc(s ? s.name : (q.from || '알 수 없는 세션'))}${sf ? `<span class="sub">${esc(floorName(sf))}에서 올라옴</span>` : ''}<span class="qt">${esc(q.text)}${more ? ` (질문 ${more}건 더)` : ''}</span></span><span class="chip ${cls}">${fmtMin(m)}</span></li>`;
       });
       cards.push(`<article class="card zone queue-card" style="--zc:var(--q)"><header><span class="zdot"></span><h3>대표실 앞 줄</h3><span class="zmeta">${DATA.pq.size ? `질문 ${DATA.pq.size}건` : '없음'}</span></header>${qrows.length ? `<ul class="members q">${qrows.join('')}</ul>` : '<p class="empty">기다리는 질문이 없습니다.</p>'}</article>`);
       secs.push(`<section class="fsec ceo">${fhead(f, f.L.ceo.lit < 0.5 ? '불 꺼짐' : '맨 위층')}<div class="board">${cards.join('')}</div></section>`);
@@ -2194,7 +2202,7 @@ function tipHtml(a){
   const w = a.want; if (!w || !DATA) return '';
   const s = w.s, q = DATA.pq.get(a.id), z = s && zoneByGid.get(s.gid), f = s && FLOORS.get(s.proj);
   const info = s ? stateInfo(s, q) : { label:'', time:'' };
-  let h = `<b>${esc(s ? s.name : a.id)}</b><span class="t-muted">${f ? esc(floorName(f)) + ' · ' : ''}${z ? esc(z.name) + ' · ' : ''}${info.label} ${info.time}</span>`;
+  let h = `<b>${esc(s ? s.name : a.id)}</b><span class="t-muted">${s && s.app ? esc(appName(s.app)) + ' · ' : ''}${f ? esc(floorName(f)) + ' · ' : ''}${z ? esc(z.name) + ' · ' : ''}${info.label} ${info.time}</span>`;
   if (s && s.parent) { const p = DATA.smap.get(s.parent); h += `<br><span class="t-muted">하위 작업자 · 상위: ${esc(p ? p.name : s.parent)}</span>`; }
   if (q) h += `<br>“${esc(q.text)}”`;
   if (a.ride) h += `<br><span class="t-muted">엘리베이터로 ${a.ride.to === OUT ? '내려가는' : esc(floorName(a.ride.to)) + '에 가는'} 중</span>`;
@@ -2478,7 +2486,7 @@ window.aiOffice = { push(state){ if (srcMode === 'push') ingest(state); } };
 })();
 const NOTES = {
   sim: '예시 데이터입니다. 실제 세션이 아닙니다. 1초마다 1분이 흘러서 40분 기준, 자리 늘어남, 줄이 길어지는 모습을 빨리 볼 수 있습니다. "새 프로젝트 시작"을 누르면 대표실 바로 아래에 층이 하나 생기고, "질문 추가"를 누르면 그 세션이 엘리베이터를 타고 맨 위층으로 올라갑니다.',
-  file: '같은 위치의 status.json을 1초마다 읽습니다. 로컬 서버(node server.mjs)로 열었다면 Claude Code 훅이 남긴 기록으로 만든 실제 세션 상태입니다. 고정 파일이면 5초 뒤 "확인 중"으로 바뀌는 것이 정상입니다.',
+  file: '같은 위치의 status.json을 1초마다 읽습니다. 로컬 서버(node server.mjs)로 열었다면 Claude Code·Codex·Gemini 훅이 남긴 기록으로 만든 실제 세션 상태입니다. 고정 파일이면 5초 뒤 "확인 중"으로 바뀌는 것이 정상입니다.',
   push: `바깥에서 보내 주는 상태를 받습니다. Tauri에서는 백엔드가 "${TAURI_EVENT}" 이벤트로 상태 JSON을 emit 하면 되고, 그 밖에서는 window.aiOffice.push(상태)를 부르면 됩니다. 1초마다 보내지 않으면 5초 뒤 "확인 중"이 됩니다.`
 };
 function syncDemo(){

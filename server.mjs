@@ -62,6 +62,7 @@ function readNew(){
 /* ── 사건 → 세션 상태 ── */
 const firstLine = (s, n) => { const l = String(s || '').split('\n').map(x => x.trim()).find(Boolean) || ''; return l.length > n ? l.slice(0, n) + '…' : l; };
 function permText(o){
+  if (o.why) return o.why;
   if (o.tool === 'Bash') return `명령 실행해도 될까요? ${o.cmd || ''}`.trim();
   if (o.tool === 'Edit' || o.tool === 'Write' || o.tool === 'MultiEdit' || o.tool === 'NotebookEdit') return `파일 고쳐도 될까요? ${o.file || ''}`.trim();
   if (o.tool === 'WebFetch' || o.tool === 'WebSearch') return '웹에 접속해도 될까요?';
@@ -72,7 +73,7 @@ const ASK_KINDS = new Set(['permission_prompt', 'elicitation_dialog']);
 function applyEvent(sid, o){
   let s = sessions.get(sid);
   if (!s) {
-    s = { id: sid, name: '', title: '', state: 'idle', startedAt: o.t, stateSince: o.t, last: o.t, cwd: null,
+    s = { id: sid, app: o.app || 'claude', name: '', title: '', state: 'idle', startedAt: o.t, stateSince: o.t, last: o.t, cwd: null,
           project: null, group: null, subs: new Map(), pend: [], q: null, ended: false };
     sessions.set(sid, s);
   }
@@ -87,7 +88,7 @@ function applyEvent(sid, o){
   if (o.agent && o.ev !== 'SubagentStart' && o.ev !== 'SubagentStop' && s.subs.has(o.agent)) {
     const sub = s.subs.get(o.agent); sub.last = o.t;
     if (o.ev === 'PermissionRequest') sub.q = sub.q || { text: permText(o), at: o.t };
-    else if (o.ev === 'Notification' && ASK_KINDS.has(o.kind)) sub.q = sub.q || { text: o.msg || '확인이 필요해요', at: o.t };
+    else if (o.ev === 'Notification' && ASK_KINDS.has(o.kind)) sub.q = sub.q || { text: o.tool ? permText(o) : (o.msg || '확인이 필요해요'), at: o.t };
     else if (o.ev === 'PreToolUse' && o.tool === 'AskUserQuestion') sub.q = { text: o.q || '확인할 게 있어요', at: o.t };
     else if (/^(Pre|Post)ToolUse/.test(o.ev)) sub.q = null;
     return;
@@ -112,10 +113,12 @@ function applyEvent(sid, o){
     case 'PermissionRequest':
       s.q = s.q || { text: permText(o), at: o.t }; break;
     case 'Notification':
-      if (ASK_KINDS.has(o.kind)) s.q = s.q || { text: o.msg || '확인이 필요해요', at: o.t };
+      if (ASK_KINDS.has(o.kind)) s.q = s.q || { text: o.tool ? permText(o) : (o.msg || '확인이 필요해요'), at: o.t };
       break;
     case 'Stop':
       s.q = null; if (s.state !== 'reporting') { s.state = 'reporting'; s.stateSince = o.t; } break;
+    case 'Interrupt': // Codex에서 Esc로 멈춤: 결과 없이 내 차례가 됐으니 대기로
+      s.q = null; if (s.state !== 'idle') { s.state = 'idle'; s.stateSince = o.t; } break;
     case 'StopFailure':
       s.q = null; s.err = o.err; if (s.state !== 'blocked') { s.state = 'blocked'; s.stateSince = o.t; } break;
     case 'SubagentStart':
@@ -193,12 +196,12 @@ function buildStatus(){
     if (state === 'reporting' && now - since > REPORT_TO_IDLE) { state = 'idle'; since += REPORT_TO_IDLE; }
     projects.set(s.project, { id: s.project, name: s.project });
     groups.set(s.project + '\u0000' + s.group, { id: s.group, name: s.group, project: s.project });
-    out.push({ id: s.id, name: s.title || s.name || '새 세션', project: s.project, group: s.group, parent: null,
+    out.push({ id: s.id, app: s.app, name: s.title || s.name || '새 세션', project: s.project, group: s.group, parent: null,
                state, startedAt: iso(s.startedAt), stateSince: iso(since) });
     if (s.q) questions.push({ id: 'q-' + s.id, sessionId: s.id, text: s.q.text, askedAt: iso(s.q.at) });
     for (const sub of s.subs.values()) {
       if (now - sub.last > GONE_WORKING) continue;
-      out.push({ id: sub.id, name: sub.name, parent: s.id, state: 'working', startedAt: iso(sub.startedAt), stateSince: iso(sub.startedAt) });
+      out.push({ id: sub.id, app: s.app, name: sub.name, parent: s.id, state: 'working', startedAt: iso(sub.startedAt), stateSince: iso(sub.startedAt) });
       if (sub.q) questions.push({ id: 'q-' + sub.id, sessionId: sub.id, text: sub.q.text, askedAt: iso(sub.q.at) });
     }
   }
@@ -207,7 +210,8 @@ function buildStatus(){
 
 /* ── 터미널에 사건 한 줄씩 ── */
 const LABEL = { SessionStart: '출근', SessionEnd: '퇴근', UserPromptSubmit: '일 받음', PreToolUse: '도구', PostToolUse: '', PostToolUseFailure: '도구 실패',
-  PermissionRequest: '허락 요청', Notification: '알림', Stop: '결과 보고', StopFailure: '막힘', SubagentStart: '하위 작업 시작', SubagentStop: '하위 작업 끝', Gone: '퇴근 (Claude 꺼짐 감지)' };
+  PermissionRequest: '허락 요청', Notification: '알림', Stop: '결과 보고', StopFailure: '막힘', SubagentStart: '하위 작업 시작', SubagentStop: '하위 작업 끝', Interrupt: '멈춤(Esc)', Gone: '퇴근 (꺼짐 감지)' };
+const APP_NAME = { claude: 'Claude', codex: 'Codex', gemini: 'Gemini' };
 let booted = false;
 function logEvent(sid, o){
   if (!booted || !LABEL[o.ev]) return;
@@ -215,7 +219,8 @@ function logEvent(sid, o){
   const who = (s && (s.title || s.name)) || sid.slice(0, 8);
   const d = new Date(o.t), t = [d.getHours(), d.getMinutes(), d.getSeconds()].map(n => String(n).padStart(2, '0')).join(':');
   const extra = o.tool ? ` ${o.tool}` : o.prompt ? ` "${firstLine(o.prompt, 30)}"` : o.kind ? ` ${o.kind}` : o.agentType ? ` ${o.agentType}` : '';
-  console.log(`[${t}] ${who} · ${LABEL[o.ev]}${extra}${o.agent && o.ev.startsWith('Pre') ? ' (하위)' : ''}`);
+  const app = APP_NAME[(s && s.app) || o.app] || (s && s.app) || '';
+  console.log(`[${t}] ${app ? app + ' · ' : ''}${who} · ${LABEL[o.ev]}${extra}${o.agent && o.ev.startsWith('Pre') ? ' (하위)' : ''}`);
 }
 
 /* ── 서버 ── */
@@ -243,6 +248,6 @@ server.listen(PORT, '127.0.0.1', () => {
   const live = [...sessions.values()].filter(s => !s.ended).length;
   console.log(`AI 세션 사옥: http://localhost:${PORT}`);
   console.log(`기록 폴더: ${DIR} (지금 세션 ${live}개)`);
-  console.log('Claude Code 세션의 사건이 아래에 한 줄씩 찍힙니다. 끄려면 Ctrl+C\n');
+  console.log('Claude Code · Codex · Gemini 세션의 사건이 아래에 한 줄씩 찍힙니다. 끄려면 Ctrl+C\n');
 });
 setInterval(() => { try { readNew(); checkAlive(); } catch {} }, 1000); // 화면을 안 열어도 터미널 로그는 계속
