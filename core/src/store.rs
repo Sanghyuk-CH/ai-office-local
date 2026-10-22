@@ -18,6 +18,8 @@ const REPORT_TO_IDLE: i64 = 3 * MIN; // 결과 보고 뒤 3분 동안 답이 없
 const GONE_WORKING: i64 = 2 * HOUR; // 프로세스 번호를 모르는 세션: 작업 중인데 2시간 조용하면 꺼진 것으로
 const GONE_IDLE: i64 = 8 * HOUR; // 대기로 8시간이 지나도 꺼진 것으로
 const SKIP_OLDER: i64 = 2 * 24 * HOUR; // 이틀 넘게 손대지 않은 기록 파일은 읽지 않는다
+const KEEP_FILES: i64 = 7 * 24 * HOUR; // 일주일 넘게 손대지 않은 기록 파일은 지운다(아직 살아 있는 세션은 빼고)
+const PRUNE_EVERY: i64 = HOUR;
 
 #[derive(Clone, Debug)]
 pub struct Question {
@@ -67,6 +69,7 @@ pub struct Store {
     sessions: Vec<Session>, // 처음 본 순서 그대로(층·자리 배정 순서가 흔들리지 않게)
     index: HashMap<String, usize>,
     boot: i64,
+    pruned_at: i64,
 }
 
 /// 화면 위쪽 메뉴바에 보여 줄 요약
@@ -105,7 +108,7 @@ fn is_ask(kind: Option<&str>) -> bool {
 
 impl Store {
     pub fn new(dir: PathBuf) -> Self {
-        Store { dir, files: HashMap::new(), sessions: Vec::new(), index: HashMap::new(), boot: procs::boot_ms() }
+        Store { dir, files: HashMap::new(), sessions: Vec::new(), index: HashMap::new(), boot: procs::boot_ms(), pruned_at: 0 }
     }
 
     pub fn dir(&self) -> &PathBuf {
@@ -376,11 +379,38 @@ impl Store {
         (v, sum)
     }
 
-    /// 한 번에: 새 기록 읽기 → 꺼진 세션 정리 → status
+    /// 오래된 기록 파일 지우기. 프로세스가 아직 살아 있는 세션의 파일은 남긴다. 지운 파일 수
+    pub fn prune(&mut self, now: i64) -> usize {
+        self.pruned_at = now;
+        let Ok(rd) = fs::read_dir(&self.dir) else { return 0 };
+        let mut n = 0;
+        for e in rd.filter_map(|e| e.ok()) {
+            let f = e.file_name().to_string_lossy().to_string();
+            let Some(sid) = f.strip_suffix(".jsonl").map(String::from) else { continue };
+            let Some(mtime) = e.metadata().ok().and_then(|m| m.modified().ok()).and_then(|m| m.duration_since(std::time::UNIX_EPOCH).ok()) else { continue };
+            if now - (mtime.as_millis() as i64) <= KEEP_FILES { continue; }
+            if let Some(&i) = self.index.get(&sid) {
+                let x = &self.sessions[i];
+                if !x.ended && x.pid.is_some() { continue; }
+            }
+            if fs::remove_file(e.path()).is_err() { continue; }
+            n += 1;
+            self.files.remove(&f);
+            if let Some(i) = self.index.remove(&sid) {
+                self.sessions.remove(i);
+                self.index = self.sessions.iter().enumerate().map(|(i, x)| (x.id.clone(), i)).collect();
+            }
+        }
+        n
+    }
+
+    /// 한 번에: 새 기록 읽기 → 꺼진 세션 정리 → (한 시간마다) 오래된 기록 지우기 → status
     pub fn tick(&mut self) -> (Value, Summary) {
         self.read_new();
         self.check_alive();
-        self.status(paths::now_ms())
+        let now = paths::now_ms();
+        if now - self.pruned_at > PRUNE_EVERY { self.prune(now); }
+        self.status(now)
     }
 }
 
@@ -458,6 +488,29 @@ mod tests {
         // 결과 보고 3분 뒤 대기
         let (v, _) = st.status(now + 4 * MIN);
         assert_eq!(v["sessions"][0]["state"], "idle");
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn prune_removes_old_files_but_keeps_live_sessions() {
+        use std::time::{Duration, SystemTime};
+        let d = tmpdir("prune");
+        let now = paths::now_ms();
+        let old = SystemTime::now() - Duration::from_secs(8 * 24 * 3600);
+        // 오래됐지만 프로세스가 살아 있음 / 오래되고 끝남 / 최근
+        write(&d, "live", &[json!({"t":now,"ev":"SessionStart","app":"claude","cwd":"/x/a","pid":std::process::id()})]);
+        write(&d, "done", &[json!({"t":now,"ev":"SessionStart","app":"claude","cwd":"/x/a"}), json!({"t":now,"ev":"SessionEnd","app":"claude"})]);
+        write(&d, "fresh", &[json!({"t":now,"ev":"SessionStart","app":"claude","cwd":"/x/a"})]);
+        let mut st = Store::new(d.clone());
+        st.read_new();
+        for f in ["live", "done"] {
+            fs::OpenOptions::new().append(true).open(d.join(format!("{f}.jsonl"))).unwrap().set_modified(old).unwrap();
+        }
+        assert_eq!(st.prune(now), 1);
+        assert!(!d.join("done.jsonl").exists());
+        assert!(d.join("live.jsonl").exists() && d.join("fresh.jsonl").exists());
+        assert!(!st.index.contains_key("done"));
+        assert_eq!(st.status(now).0["sessions"].as_array().unwrap().len(), 2);
         let _ = fs::remove_dir_all(&d);
     }
 

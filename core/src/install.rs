@@ -134,6 +134,25 @@ pub fn ensure_bin(exe: &Path) -> std::io::Result<bool> {
     Ok(true)
 }
 
+/// 설정 파일마다 남겨 둘 백업 수
+const KEEP_BACKUPS: usize = 3;
+
+/// 사옥이 만든 백업(<파일>.bak-<시각>)만 최신 keep개 남기고 지운다. 지운 수
+/// 시각은 앱 형식(밀리초 숫자)과 예전 Node 형식(2026-10-22T12-03-24-624Z) 둘 다
+pub fn prune_backups(file: &Path, keep: usize) -> usize {
+    let (Some(dir), Some(name)) = (file.parent(), file.file_name()) else { return 0 };
+    let prefix = format!("{}.bak-", name.to_string_lossy());
+    let Ok(rd) = fs::read_dir(dir) else { return 0 };
+    let mut baks: Vec<(std::time::SystemTime, PathBuf)> = rd.filter_map(|e| e.ok()).filter_map(|e| {
+        let n = e.file_name().to_string_lossy().to_string();
+        let stamp = n.strip_prefix(&prefix)?;
+        if stamp.is_empty() || !stamp.chars().all(|c| c.is_ascii_digit() || "TZ-".contains(c)) { return None; }
+        Some((e.metadata().ok()?.modified().ok()?, e.path()))
+    }).collect();
+    baks.sort_by(|a, b| b.0.cmp(&a.0));
+    baks.into_iter().skip(keep).filter(|(_, p)| fs::remove_file(p).is_ok()).count()
+}
+
 /// 깔려 있는 도구마다 훅을 넣거나(add) 뺀다. 결과를 한 줄씩
 pub fn apply(add: bool, exe: Option<&Path>) -> Vec<String> {
     let mut report = Vec::new();
@@ -157,6 +176,7 @@ pub fn apply(add: bool, exe: Option<&Path>) -> Vec<String> {
         if t.file.exists() {
             let bak = PathBuf::from(format!("{}.bak-{stamp}", t.file.to_string_lossy()));
             let _ = fs::copy(&t.file, &bak);
+            prune_backups(&t.file, KEEP_BACKUPS);
         }
         rewrite(&mut conf, t.app, t.events, add);
         let text = serde_json::to_string_pretty(&conf).unwrap_or_else(|_| "{}".into()) + "\n";
@@ -194,5 +214,26 @@ mod tests {
         assert_eq!(g["hooks"]["BeforeAgent"][0]["hooks"][0]["timeout"], 5000);
         let keys: Vec<&String> = g.as_object().unwrap().keys().collect();
         assert_eq!(keys, ["theme", "hooks"]);
+    }
+
+    #[test]
+    fn prune_backups_keeps_newest_and_only_ours() {
+        use std::time::{Duration, SystemTime};
+        let d = std::env::temp_dir().join(format!("office-core-bak-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&d);
+        fs::create_dir_all(&d).unwrap();
+        let names = ["settings.json.bak-1700000000001", "settings.json.bak-2025-01-01T00-00-00-000Z", "settings.json.bak-1700000000003",
+                     "settings.json.bak-1700000000004", "settings.json.bak-1700000000005", "settings.json.bak-mine", "other.json.bak-1700000000000"];
+        let base = SystemTime::now() - Duration::from_secs(1000);
+        for (i, n) in names.iter().enumerate() {
+            let f = fs::File::create(d.join(n)).unwrap();
+            f.set_modified(base + Duration::from_secs(i as u64)).unwrap();
+        }
+        assert_eq!(prune_backups(&d.join("settings.json"), 3), 2);
+        let mut left: Vec<String> = fs::read_dir(&d).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().to_string()).collect();
+        left.sort();
+        assert_eq!(left, ["other.json.bak-1700000000000", "settings.json.bak-1700000000003", "settings.json.bak-1700000000004",
+                          "settings.json.bak-1700000000005", "settings.json.bak-mine"]);
+        let _ = fs::remove_dir_all(&d);
     }
 }
