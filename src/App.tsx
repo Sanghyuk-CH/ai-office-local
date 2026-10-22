@@ -6,7 +6,6 @@ import { Stats } from './components/Stats';
 import { Board } from './components/Board';
 import { Stage } from './components/Stage';
 import { Legend } from './components/Legend';
-import { SourcePanel } from './components/SourcePanel';
 import { FormatHelp } from './components/FormatHelp';
 
 export function App() {
@@ -28,7 +27,6 @@ export function App() {
           </section>
           <aside className="side side-r" aria-label="안내와 자료 연결">
             <Legend />
-            <SourcePanel />
             <FormatHelp />
           </aside>
         </div>
