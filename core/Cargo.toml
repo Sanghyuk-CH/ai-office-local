@@ -1,0 +1,9 @@
+[package]
+name = "office-core"
+version = "0.1.0"
+edition = "2021"
+description = "AI 세션 사옥: 훅 기록, 세션 상태 계산, 훅 설치 (Tauri 없이 테스트 가능)"
+
+[dependencies]
+serde_json = { version = "1", features = ["preserve_order"] }
+libc = "0.2"

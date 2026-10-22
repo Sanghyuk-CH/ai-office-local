@@ -1,0 +1,15 @@
+[package]
+name = "ai-office"
+version = "0.1.0"
+edition = "2021"
+description = "AI 세션 사옥: AI 코딩 세션을 사무실 사람으로 보여 주는 메뉴바 앱"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri-plugin-dialog = "2"
+tauri-plugin-autostart = "2"
+serde_json = "1"
+office-core = { path = "../core" }

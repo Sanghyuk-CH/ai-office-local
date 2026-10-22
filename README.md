@@ -1,46 +1,82 @@
-# AI 세션 사옥 · 로컬 테스트
+# AI 세션 사옥
 
-내 맥에서 돌아가는 AI 코딩 세션(Claude Code, Codex CLI, Gemini CLI)을 사옥 화면에 실제로 띄워 보는 묶음입니다.
-Node 18 이상만 있으면 되고, 따로 설치할 패키지는 없습니다.
+Claude Code, Codex CLI, Gemini CLI 세션을 사무실 사람으로 보여 주는 화면입니다.
+세션 하나가 사람 한 명, 프로젝트(git 저장소)마다 한 층, 브랜치마다 책상 섬, 맨 위층은 나(대표)의 방입니다.
+
+두 가지로 쓸 수 있습니다.
+
+- **맥 앱** (Tauri 2): 메뉴바에 상주하고, 앱 실행 파일이 훅까지 맡습니다. Node가 필요 없습니다.
+- **로컬 테스트** (Node): 훅 스크립트와 작은 서버로 브라우저에서 봅니다. 앱 없이 빠르게 확인할 때.
 
 ```
 Claude Code ┐
-Codex CLI   ├─(훅)─▶ ~/.ai-office/events/<세션>.jsonl ─▶ server.mjs ─▶ 브라우저(office.html)
+Codex CLI   ├─(훅)─▶ ~/.ai-office/events/<세션>.jsonl ─▶ 앱(또는 server.mjs) ─▶ 사옥 화면(office.html)
 Gemini CLI  ┘
 ```
 
-## 1. 훅 등록 (한 번만, 고칠 때마다 다시)
+---
+
+## 맥 앱
+
+### 받기
+
+`main`에 올리면 GitHub Actions가 맥 앱을 빌드합니다(20분쯤). 저장소 **Actions** 탭의 "맥 앱 빌드" 실행 화면 아래
+**Artifacts**에서 `ai-office-macos`를 받아 풀면 dmg가 나옵니다. 애플 실리콘·인텔 둘 다 됩니다.
+`v0.1.0`처럼 태그를 달아 올리면 Releases에도 dmg가 붙습니다.
+
+### 설치
+
+1. dmg를 열고 `AI Office`를 응용 프로그램 폴더로 끌어 놓습니다.
+2. 개발자 인증서로 서명하지 않은 앱이라 처음엔 맥이 막습니다. 둘 중 하나로 엽니다.
+   - 한 번 열어 보고 막히면 **시스템 설정 → 개인정보 보호 및 보안** 아래쪽의 **그래도 열기**
+   - 터미널에서 `xattr -dr com.apple.quarantine "/Applications/AI Office.app"` 후 열기
+3. 처음 켜면 "훅을 넣을까요?"라고 묻습니다. **훅 넣기**를 누르면 깔려 있는 도구마다 설정에 훅을 넣습니다.
+   - Claude Code `~/.claude/settings.json`, Codex `~/.codex/hooks.json`, Gemini `~/.gemini/settings.json`
+   - 기존 설정은 그대로 두고, 바꾸기 전에 같은 폴더에 `.bak-시각` 백업을 남깁니다.
+   - 로컬 테스트용 Node 훅(`hook.mjs`)이 들어 있으면 앱 훅으로 바꿔 끼웁니다. 그 뒤로 `server.mjs`는 켤 필요 없습니다.
+4. 이미 켜져 있던 세션은 껐다 켜야 훅이 붙습니다.
+
+### 메뉴바
+
+나에게 온 질문이 있으면 아이콘 옆에 질문 수가 뜹니다. 창을 닫아도 앱은 메뉴바에 남아 계속 따라갑니다.
+
+| 메뉴 | 하는 일 |
+|---|---|
+| 세션 n · 작업 중 n · 질문 n | 지금 상태 |
+| 사옥 열기 | 사옥 창 열기 |
+| 훅 넣기·다시 넣기 | 세 도구 설정에 훅 넣기(도구를 새로 깔았을 때도) |
+| 훅 빼기 | 사옥 훅만 빼기(다른 훅은 그대로) |
+| 기록 지우기 | `~/.ai-office/events` 비우기 |
+| 로그인할 때 켜기 | 맥을 켜면 메뉴바에 자동으로 |
+| 종료 | 앱 끄기(훅은 계속 기록하고, 다시 켜면 이어서 보여 줌) |
+
+터미널에서도 쓸 수 있습니다: `"/Applications/AI Office.app/Contents/MacOS/ai-office" install | uninstall | status`
+
+### 직접 빌드
 
 ```bash
-cd ai-office-local
-node install.mjs
+# Rust가 없으면: curl https://sh.rustup.rs -sSf | sh
+npm install
+npm run dev        # 개발 실행
+npm run build      # dmg 만들기 → target/release/bundle/dmg
+cargo test -p office-core   # 훅·상태 계산·설정 넣기 테스트
 ```
 
-깔려 있는 도구를 찾아 각 설정 파일에 훅을 추가합니다. 없는 도구는 건너뜁니다.
+---
 
-| 도구 | 설정 파일 | 훅 |
-|---|---|---|
-| Claude Code | `~/.claude/settings.json` | 12개 |
-| Codex CLI | `~/.codex/hooks.json` | 10개 |
-| Gemini CLI | `~/.gemini/settings.json` | 7개 |
+## 로컬 테스트 (Node, 앱 없이)
 
-- 기존 설정은 그대로 두고, 바꾸기 전에 같은 폴더에 `.bak-날짜` 백업을 만듭니다.
-- 훅 스크립트는 `~/.ai-office/hook.mjs` 하나를 같이 씁니다(도구 구분은 `--app codex`처럼 붙는 이름으로).
-- 다시 실행해도 두 번 들어가지 않습니다. 특정 도구만: `node install.mjs --only codex,gemini`
-
-## 2. 서버 켜기
+Node 18 이상만 있으면 됩니다.
 
 ```bash
-node server.mjs
+node install.mjs   # 훅 등록 (깔린 도구만, 기존 설정 백업)
+node server.mjs    # http://localhost:4317
 ```
 
-브라우저에서 http://localhost:4317 을 엽니다. 자료 칸이 자동으로 "status.json 파일"로 잡힙니다.
-터미널에는 세션에서 생기는 일이 도구 이름과 함께 한 줄씩 찍힙니다.
+새 터미널에서 `claude`, `codex`, `gemini`를 켜고 일을 시켜 보세요. 정리할 때는 `node server.mjs --clear`(기록 지우기),
+`node install.mjs --uninstall`(훅 빼기). 앱을 쓰기 시작하면 앱이 이 훅을 앱 훅으로 바꿔 끼웁니다.
 
-## 3. 도구 켜기
-
-**새 터미널**에서 `claude`, `codex`, `gemini`를 실행하고 아무 일이나 시켜 보세요. 이미 켜져 있던 세션은 껐다 켜야 훅이 붙습니다.
-도구가 두 가지 이상 섞이면 현황판 이름 앞에 도구 이름표(Claude, Codex, Gemini)가 붙고, 사람에 마우스를 올려도 보입니다.
+---
 
 ## 무엇이 어떻게 보이나
 
@@ -56,23 +92,24 @@ node server.mjs
 | 세션 종료, 창 닫기, Ctrl+C | 1~2초 안에 퇴근 |
 | 한 층(또는 팀 섬)에 아무도 없이 5분 | 층(섬) 철거 |
 
-- **층(프로젝트)**: 세션을 연 폴더의 git 저장소 이름. git이 아니면 폴더 이름.
-- **섬(팀)**: 그 저장소의 브랜치 이름.
-- **세션 이름**: 첫 프롬프트의 첫 줄(Claude는 `/rename`으로 제목을 붙이면 그 제목).
-- 직접 정하고 싶으면: `AI_OFFICE_PROJECT=web AI_OFFICE_GROUP=fe codex`
-
-## 정리
-
-```bash
-node server.mjs --clear       # 쌓인 기록 지우기
-node install.mjs --uninstall  # 세 도구 모두에서 사옥 훅만 빼기 (다른 훅은 건드리지 않음)
-```
+- **층**: 세션을 연 폴더의 git 저장소 이름(git이 아니면 폴더 이름). **섬**: 브랜치 이름. **이름**: 첫 프롬프트 첫 줄.
+- 직접 정하려면: `AI_OFFICE_PROJECT=web AI_OFFICE_GROUP=fe claude`
+- 도구가 두 가지 이상 섞이면 현황판 이름 앞에 도구 이름표(Claude, Codex, Gemini)가 붙습니다.
 
 ## 알아 둘 점
 
-- 기록에는 프롬프트 앞 120자, 실행한 명령 앞 80자, 파일 이름이 들어갑니다. `~/.ai-office`에만 저장되고 밖으로 나가지 않습니다. 서버도 이 컴퓨터(127.0.0.1)에서만 열립니다.
-- 훅은 사건마다 node를 한 번 띄웁니다(수십 ms). 도구 한 번 쓸 때마다 이 정도가 더해집니다.
-- 끈 세션은 훅이 기록해 둔 도구 프로세스 번호가 사라졌는지 서버가 1초마다 확인해서 알아챕니다. 번호를 못 찾은 세션만 작업 중 2시간, 대기 8시간 뒤 빠집니다.
-- 도구마다 훅으로 알려 주는 범위가 달라서, Gemini는 하위 작업자가 나오지 않고 Codex는 "막힘"이 나오지 않습니다.
-- Gemini 설정 파일에 주석이 들어 있으면(JSON 형식이 아니면) 손대지 않고 건너뜁니다. 그때는 알려 주세요.
-- 하루 마감(불 끄기)은 아직 자동으로 하지 않습니다.
+- 기록에는 프롬프트 앞 120자, 실행한 명령 앞 80자, 파일 이름이 들어갑니다. `~/.ai-office`에만 저장되고 밖으로 나가지 않습니다.
+- 끈 세션은 훅이 기록해 둔 도구 프로세스 번호가 사라졌는지 1초마다 확인해서 알아챕니다.
+- 도구마다 훅으로 알려 주는 범위가 달라서 Gemini는 하위 작업자가 나오지 않고, Codex는 "막힘"이 나오지 않습니다.
+- 윈도우는 아직 지원하지 않습니다.
+
+## 구조
+
+```
+office.html      사옥 화면(로컬 서버와 앱이 같이 씀)
+hook.mjs, server.mjs, install.mjs   로컬 테스트용 Node 버전
+core/            훅 기록, 세션 상태 계산, 훅 설치 (Rust, Tauri 없이 cargo test)
+src-tauri/       맥 앱: 메뉴바, 창, 1초마다 "office-status" 이벤트, `ai-office hook` 훅 모드
+scripts/         office.html → dist/index.html
+.github/         맥 dmg 빌드
+```

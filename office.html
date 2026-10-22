@@ -2487,7 +2487,7 @@ window.aiOffice = { push(state){ if (srcMode === 'push') ingest(state); } };
 const NOTES = {
   sim: '예시 데이터입니다. 실제 세션이 아닙니다. 1초마다 1분이 흘러서 40분 기준, 자리 늘어남, 줄이 길어지는 모습을 빨리 볼 수 있습니다. "새 프로젝트 시작"을 누르면 대표실 바로 아래에 층이 하나 생기고, "질문 추가"를 누르면 그 세션이 엘리베이터를 타고 맨 위층으로 올라갑니다.',
   file: '같은 위치의 status.json을 1초마다 읽습니다. 로컬 서버(node server.mjs)로 열었다면 Claude Code·Codex·Gemini 훅이 남긴 기록으로 만든 실제 세션 상태입니다. 고정 파일이면 5초 뒤 "확인 중"으로 바뀌는 것이 정상입니다.',
-  push: `바깥에서 보내 주는 상태를 받습니다. Tauri에서는 백엔드가 "${TAURI_EVENT}" 이벤트로 상태 JSON을 emit 하면 되고, 그 밖에서는 window.aiOffice.push(상태)를 부르면 됩니다. 1초마다 보내지 않으면 5초 뒤 "확인 중"이 됩니다.`
+  push: window.__TAURI__ ? '앱이 Claude Code·Codex·Gemini 훅 기록을 읽어 1초마다 보내 줍니다. 훅 넣기·빼기, 기록 지우기는 메뉴바 아이콘의 메뉴에 있습니다.' : `바깥에서 보내 주는 상태를 받습니다. Tauri에서는 백엔드가 "${TAURI_EVENT}" 이벤트로 상태 JSON을 emit 하면 되고, 그 밖에서는 window.aiOffice.push(상태)를 부르면 됩니다. 1초마다 보내지 않으면 5초 뒤 "확인 중"이 됩니다.`
 };
 function syncDemo(){
   const on = srcMode === 'sim';
