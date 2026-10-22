@@ -7,7 +7,7 @@ export function BuildingNote() {
   return (
     <div className="card">
       <h2>오늘 건물</h2>
-      <p className="note">{capNote}</p>
+      <p className="note" style={{ whiteSpace: 'pre-line' }}>{capNote}</p>
     </div>
   );
 }
