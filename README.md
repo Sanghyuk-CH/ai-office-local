@@ -15,16 +15,25 @@ Gemini CLI  ┘
 
 ## 맥 앱
 
-### 받기
+### 빌드
 
-`main`에 올리면 GitHub Actions가 맥 앱을 빌드합니다(20분쯤). 저장소 **Actions** 탭의 "맥 앱 빌드" 실행 화면 아래
-**Artifacts**에서 `ai-office-macos`를 받아 풀면 dmg가 나옵니다. 애플 실리콘·인텔 둘 다 됩니다.
-`v0.1.0`처럼 태그를 달아 올리면 Releases에도 dmg가 붙습니다.
+```bash
+# Node 24 (.node-version), Rust 필요
+# Rust가 없으면: curl https://sh.rustup.rs -sSf | sh
+npm install
+npm run dev        # 앱 개발 실행 (Vite 개발 서버 + Tauri)
+npm run dev:web    # 화면만 브라우저로 (http://localhost:1420, 예시 시뮬레이션)
+npm run typecheck  # TypeScript 검사
+npm run build      # dmg 만들기 → target/release/bundle/dmg
+cargo test -p office-core   # 훅·상태 계산·설정 넣기 테스트
+```
+
+지금은 배포 빌드(CI)가 없습니다. 개발자 인증서 서명·공증 전까지는 로컬에서 빌드해 씁니다.
 
 ### 설치
 
-1. dmg를 열고 `AI Office`를 응용 프로그램 폴더로 끌어 놓습니다.
-2. 개발자 인증서로 서명하지 않은 앱이라 처음엔 맥이 막습니다. 둘 중 하나로 엽니다.
+1. `npm run build`로 만든 dmg를 열고 `AI Office`를 응용 프로그램 폴더로 끌어 놓습니다.
+2. 직접 빌드한 앱은 바로 열립니다. 다른 곳에서 받은 dmg라면 개발자 인증서 서명이 없어 처음엔 맥이 막습니다. 둘 중 하나로 엽니다.
    - 한 번 열어 보고 막히면 **시스템 설정 → 개인정보 보호 및 보안** 아래쪽의 **그래도 열기**
    - 터미널에서 `xattr -dr com.apple.quarantine "/Applications/AI Office.app"` 후 열기
 3. 처음 켜면 "훅을 넣을까요?"라고 묻습니다. **훅 넣기**를 누르면 깔려 있는 도구마다 설정에 훅을 넣습니다.
@@ -48,18 +57,6 @@ Gemini CLI  ┘
 | 종료 | 앱 끄기(훅은 계속 기록하고, 다시 켜면 이어서 보여 줌) |
 
 터미널에서도 쓸 수 있습니다: `"/Applications/AI Office.app/Contents/MacOS/ai-office" install | uninstall | status`
-
-### 직접 빌드
-
-```bash
-# Rust가 없으면: curl https://sh.rustup.rs -sSf | sh
-npm install
-npm run dev        # 앱 개발 실행 (Vite 개발 서버 + Tauri)
-npm run dev:web    # 화면만 브라우저로 (http://localhost:1420, 예시 시뮬레이션)
-npm run typecheck  # TypeScript 검사
-npm run build      # dmg 만들기 → target/release/bundle/dmg
-cargo test -p office-core   # 훅·상태 계산·설정 넣기 테스트
-```
 
 ---
 
@@ -98,5 +95,4 @@ index.html, src/ 사옥 화면 (React + TypeScript, Vite)
   src/components/ 현황판·명단·자료 연결 등 React 컴포넌트
 core/            훅 기록, 세션 상태 계산, 훅 설치 (Rust, Tauri 없이 cargo test)
 src-tauri/       맥 앱: 메뉴바, 창, 1초마다 "office-status" 이벤트, `ai-office hook` 훅 모드
-.github/         맥 dmg 빌드
 ```
