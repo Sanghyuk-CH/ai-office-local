@@ -3,14 +3,11 @@
 Claude Code, Codex CLI, Gemini CLI 세션을 사무실 사람으로 보여 주는 화면입니다.
 세션 하나가 사람 한 명, 프로젝트(git 저장소)마다 한 층, 브랜치마다 책상 섬, 맨 위층은 나(대표)의 방입니다.
 
-두 가지로 쓸 수 있습니다.
-
-- **맥 앱** (Tauri 2): 메뉴바에 상주하고, 앱 실행 파일이 훅까지 맡습니다. Node가 필요 없습니다.
-- **로컬 테스트** (Node): 훅 스크립트와 작은 서버로 브라우저에서 봅니다. 앱 없이 빠르게 확인할 때.
+맥 앱(Tauri 2)으로 메뉴바에 상주하고, 앱 실행 파일이 훅까지 맡습니다. 화면은 React + TypeScript(Vite)입니다.
 
 ```
 Claude Code ┐
-Codex CLI   ├─(훅)─▶ ~/.ai-office/events/<세션>.jsonl ─▶ 앱(또는 server.mjs) ─▶ 사옥 화면(office.html)
+Codex CLI   ├─(훅)─▶ ~/.ai-office/events/<세션>.jsonl ─▶ 앱 ─▶ 사옥 화면(React)
 Gemini CLI  ┘
 ```
 
@@ -33,7 +30,7 @@ Gemini CLI  ┘
 3. 처음 켜면 "훅을 넣을까요?"라고 묻습니다. **훅 넣기**를 누르면 깔려 있는 도구마다 설정에 훅을 넣습니다.
    - Claude Code `~/.claude/settings.json`, Codex `~/.codex/hooks.json`, Gemini `~/.gemini/settings.json`
    - 기존 설정은 그대로 두고, 바꾸기 전에 같은 폴더에 `.bak-시각` 백업을 남깁니다.
-   - 로컬 테스트용 Node 훅(`hook.mjs`)이 들어 있으면 앱 훅으로 바꿔 끼웁니다. 그 뒤로 `server.mjs`는 켤 필요 없습니다.
+   - 예전 Node 훅(`~/.ai-office/hook.mjs`)이 들어 있으면 앱 훅으로 바꿔 끼웁니다.
 4. 이미 켜져 있던 세션은 껐다 켜야 훅이 붙습니다.
 
 ### 메뉴바
@@ -57,24 +54,12 @@ Gemini CLI  ┘
 ```bash
 # Rust가 없으면: curl https://sh.rustup.rs -sSf | sh
 npm install
-npm run dev        # 개발 실행
+npm run dev        # 앱 개발 실행 (Vite 개발 서버 + Tauri)
+npm run dev:web    # 화면만 브라우저로 (http://localhost:1420, 예시 시뮬레이션)
+npm run typecheck  # TypeScript 검사
 npm run build      # dmg 만들기 → target/release/bundle/dmg
 cargo test -p office-core   # 훅·상태 계산·설정 넣기 테스트
 ```
-
----
-
-## 로컬 테스트 (Node, 앱 없이)
-
-Node 18 이상만 있으면 됩니다.
-
-```bash
-node install.mjs   # 훅 등록 (깔린 도구만, 기존 설정 백업)
-node server.mjs    # http://localhost:4317
-```
-
-새 터미널에서 `claude`, `codex`, `gemini`를 켜고 일을 시켜 보세요. 정리할 때는 `node server.mjs --clear`(기록 지우기),
-`node install.mjs --uninstall`(훅 빼기). 앱을 쓰기 시작하면 앱이 이 훅을 앱 훅으로 바꿔 끼웁니다.
 
 ---
 
@@ -108,10 +93,10 @@ node server.mjs    # http://localhost:4317
 ## 구조
 
 ```
-office.html      사옥 화면(로컬 서버와 앱이 같이 씀)
-hook.mjs, server.mjs, install.mjs   로컬 테스트용 Node 버전
+index.html, src/ 사옥 화면 (React + TypeScript, Vite)
+  src/engine/    캔버스 엔진: 건물·길찾기·엘리베이터·그리기·예시 시뮬레이션. 화면 조각(UiSnapshot)을 내보냄
+  src/components/ 현황판·명단·자료 연결 등 React 컴포넌트
 core/            훅 기록, 세션 상태 계산, 훅 설치 (Rust, Tauri 없이 cargo test)
 src-tauri/       맥 앱: 메뉴바, 창, 1초마다 "office-status" 이벤트, `ai-office hook` 훅 모드
-scripts/         office.html → dist/index.html
 .github/         맥 dmg 빌드
 ```
