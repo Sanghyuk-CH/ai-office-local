@@ -70,7 +70,7 @@ export function renderBoard(): void {
   const DATA = E.DATA, cap = E.cap;
   const deskTotal = E.ALLZ.reduce((n, z) => n + (z.kind === 'team' ? z.slots.length : 0), 0);
   const sofaTotal = cap.floors.slice(0, MAX_FLOORS).reduce((n, p) => n + sofaCap(p.id), 0);
-  const capNote = `오늘 건물: ${E.FL.length}층(프로젝트 ${E.FL.length - 1}개 + 대표실), 책상 ${deskTotal}개, 소파 ${sofaTotal}자리. 자리는 1분 넘게 모자라면 늘어나고, 하루 마감 때 층과 자리가 모두 처음으로 돌아갑니다. 저장 위치: ${capStore.kind}.`;
+  const capNote = `${E.FL.length}층(프로젝트 ${E.FL.length - 1}개 + 대표실), 책상 ${deskTotal}개, 소파 ${sofaTotal}자리. 자리는 1분 넘게 모자라면 늘어나고, 하루 마감 때 층과 자리가 모두 처음으로 돌아갑니다. 저장 위치: ${capStore.kind}.`;
   if (!DATA) { setSlice('board', { ready:false, floors:[], capNote: E.ui.board.capNote }); return; }
   const secs: FloorSection[] = [];
   for (const f of E.FL) {
